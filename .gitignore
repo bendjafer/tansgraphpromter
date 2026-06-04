@@ -1,0 +1,43 @@
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── IDE / OS ─────────────────────────────────────────────────
+.idea/
+.vscode/
+.DS_Store
+
+# ── Secrets ──────────────────────────────────────────────────
+.env
+
+# ── Large archives ───────────────────────────────────────────
+*.zip
+
+# ── Original raw datasets (download separately, see README) ──
+dataset/cora_orig/
+dataset/citeseer_orig/
+dataset/PubMed_orig/
+dataset/ogbn_arxiv/
+dataset/ogbn_arxiv_orig/
+dataset/ogbn_products/
+dataset/Citeseer/
+dataset/cora/
+
+# ── Processed original datasets (regenerate with preprocess scripts) ─
+dataset/tape_cora/
+dataset/tape_citeseer/
+dataset/tape_pubmed/
+dataset/tape_arxiv/
+dataset/tape_products/
+
+# ── PyG internal caches (auto-regenerated on first import) ───
+dataset/airports/*/raw/
+dataset/airports/*/processed/
+
+# ── Model checkpoints & prediction outputs (large) ───────────
+output/
+output2/
+# ── Run logs ─────────────────────────────────────────────────
+wandb/
+logs/
