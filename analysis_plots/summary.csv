@@ -1,0 +1,5 @@
+dataset,features,Silhouette ↑,Davies-Bouldin ↓,kNN acc ↑,Linear acc ↑
+brazil,topo,0.0313,2.0765,0.6635,0.663
+brazil,minilm,-0.0052,4.7108,0.61,0.6712
+europe,topo,-0.0138,4.4555,0.5062,0.5085
+europe,minilm,-0.0443,9.7895,0.4438,0.4685

@@ -83,6 +83,7 @@ class GraphLLM(torch.nn.Module):
             num_layers=args.gnn_num_layers,
             dropout=args.gnn_dropout,
             num_heads=args.gnn_num_heads,
+            use_bn=getattr(args, 'gnn_normalize', 'batchnorm') == 'batchnorm',
         ).to(self.model.device)
 
         self.projector = nn.Sequential(

@@ -93,4 +93,6 @@ collate_funcs = {
     'products': TAGCollator,
     'brazil': TAGCollator,
     'europe': TAGCollator,
+    'brazil_minilm': TAGCollator,
+    'europe_minilm': TAGCollator,
 }

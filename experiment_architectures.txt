@@ -1,0 +1,176 @@
+================================================================
+  AIRPORT EXPERIMENT ARCHITECTURES — Pre-TANS Setup
+  (run_airport_experiments.sh  +  run_airport_minilm_experiments.sh)
+================================================================
+
+----------------------------------------------------------------
+EXPERIMENT A — Topological Features  (run_airport_experiments.sh)
+----------------------------------------------------------------
+
+  Scripts    : run_airport_experiments.sh
+  Output dir : output_topo/
+  Logs       : logs/airport/
+
+  Directions:
+    Set A : europe  → brazil   (seeds 0, 1, 2)
+    Set B : brazil  → europe   (seeds 0, 1, 2)
+
+  LLM
+  ───
+    Backbone      : Vicuna-7B  (LLaMA architecture)
+    Precision     : float16
+    Frozen        : Yes (LLM weights not updated)
+    Trainable %   : ~0.14%  (GNN + projector only)
+
+  GNN  (GAT — Graph Attention Network)
+  ─────────────────────────────────────
+    Architecture     : GAT (4 attention heads, concat=False)
+    Input features   : 5-dim topological features  [N, 5]
+                         degree_centrality
+                         closeness_centrality
+                         betweenness_centrality
+                         clustering_coefficient
+                         square_clustering_coefficient
+    Feature norm     : None (raw NetworkX values, already in [0,1])
+    hidden_dim       : 64   ← auto-applied from dataset class
+    out_dim          : 64
+    num_layers       : 2
+    num_heads        : 4
+    dropout          : 0.0
+    BatchNorm        : Yes (between every hidden layer)
+
+  Projector  (GNN → LLM token space)
+  ────────────────────────────────────
+    GNN out (64) → Linear(64, 2048) → Sigmoid → Linear(2048, 4096)
+    Output is a single soft-prompt token prepended to LLM input.
+
+  Optimiser
+  ──────────
+    AdamW  lr=1e-5  weight_decay=0.05  betas=(0.9, 0.95)
+    Grad clip: 0.1
+    Cosine LR schedule  warmup_epochs=1  min_lr=5e-6
+
+  Training setup
+  ───────────────
+    Epochs          : 15
+    Batch size      : 4
+    Grad accum      : 2  (effective batch = 8)
+    Eval batch size : 8
+    Val set         : None  (cross-dataset → checkpoint saved every epoch)
+    Model selection : Last epoch  (no val — overwrites best each epoch)
+    Split           : Source = 100% train, Target = 100% test
+    Patience        : 2 epochs (not active — no val set)
+
+  Checkpoint filename pattern:
+    output_topo/{dataset}_{model_name}_{llm}_{gnn}_seed{seed}_checkpoint_best.pth
+    e.g.  europe_graph_llm_7b_gat_seed0_checkpoint_best.pth
+
+----------------------------------------------------------------
+EXPERIMENT B — MiniLM Embeddings  (run_airport_minilm_experiments.sh)
+----------------------------------------------------------------
+
+  Script     : run_airport_minilm_experiments.sh
+  Output dir : output_minilm/
+  Logs       : logs/airport_minilmc/
+
+  Directions:
+    Set A : europe_minilm  → brazil_minilm  (seeds 0, 1, 2)
+    Set B : brazil_minilm  → europe_minilm  (seeds 0, 1, 2)
+
+  LLM  — identical to Experiment A above
+
+  GNN  (GAT)
+  ───────────
+    Architecture     : GAT (4 attention heads, concat=False)
+    Input features   : 384-dim MiniLM embeddings  [N, 384]
+                         Model: all-MiniLM-L12-v2
+                         Template: "The node type is airport. The node
+                           description is na. The additional node
+                           description is {desc}."
+                         Cached at: dataset/airports/{name}/minilm_x.pt
+    Feature norm     : None
+    hidden_dim       : 256  ← auto-applied from dataset class
+    out_dim          : 256
+    num_layers       : 2
+    num_heads        : 4
+    dropout          : 0.0
+    BatchNorm        : Yes (between every hidden layer)
+
+  Projector
+  ──────────
+    GNN out (256) → Linear(256, 2048) → Sigmoid → Linear(2048, 4096)
+
+  Optimiser / Training setup — identical to Experiment A
+
+  Checkpoint filename pattern:
+    output_minilm/{dataset}_{model_name}_{llm}_{gnn}_seed{seed}_checkpoint_best.pth
+    e.g.  europe_minilm_graph_llm_7b_gat_seed0_checkpoint_best.pth
+
+----------------------------------------------------------------
+WHAT CHANGED IN THE TANS SETUP (run_airport_tans_experiments.sh)
+----------------------------------------------------------------
+
+  Parameter            Pre-TANS              TANS
+  ─────────────────    ──────────────────    ──────────────────────────────
+  GNN backbone         GAT                   GCN
+  hidden_dim           64 / 256              16 (brazil→europe)  /  32 (europe→brazil)
+  num_layers           2                     3 (brazil→europe)   /  2  (europe→brazil)
+  BatchNorm            Always on             Off (brazil→europe) /  On  (europe→brazil)
+  dropout              0.0                   0.0                 /  0.8
+  lr                   1e-5                  5e-2 (b→e)  /  5e-3 (e→b)
+  weight_decay         0.05                  1e-4 (b→e)  /  0.0  (e→b)
+  Feature norm (TPF)   None                  StandardScaler (mean=0, std=1)
+  Target val split     0% val / 100% test    20% val / 80% test
+  Model selection      Last epoch            Best val accuracy
+  Output dir           output_topo/          output_tans/
+  Logs                 logs/airport/         logs/airport_tans/
+
+----------------------------------------------------------------
+CAN YOU STILL RUN THE PRE-TANS EXPERIMENTS?  YES.
+----------------------------------------------------------------
+
+  Nothing was removed. The three new flags added to train.py all
+  default to the original behaviour:
+
+    --gnn_normalize batchnorm   (default — BatchNorm always on)
+    --target_val_ratio 0.0      (default — no target val split)
+    --normalize_features        (not set by default — no scaling)
+
+  The pre-TANS scripts pass none of these flags, so they behave
+  exactly as before.
+
+  TO RERUN PRE-TANS EXPERIMENTS:
+  ─────────────────────────────────
+    # Topological features (GAT, hidden=64):
+    bash run_airport_experiments.sh
+
+    # MiniLM embeddings (GAT, hidden=256):
+    bash run_airport_minilm_experiments.sh
+
+  Results go to output_topo/ and output_minilm/ respectively,
+  completely separate from output_tans/.
+
+  TO LOAD A PRE-TANS CHECKPOINT FOR INFERENCE:
+  ──────────────────────────────────────────────
+    from src.utils.ckpt import _reload_model
+    from src.model import load_model, llama_model_path
+    from src.dataset import load_dataset
+    import argparse
+
+    # Reconstruct args to match the original run
+    args.gnn_model_name  = 'gat'
+    args.gnn_hidden_dim  = 64       # or 256 for minilm
+    args.gnn_out_dim     = 64       # or 256
+    args.gnn_num_layers  = 2
+    args.gnn_num_heads   = 4
+    args.gnn_dropout     = 0.0
+    args.gnn_normalize   = 'batchnorm'
+    args.llm_model_name  = '7b'
+    args.llm_frozen      = 'True'
+
+    dataset = load_dataset['europe']()
+    model   = load_model['graph_llm'](
+        graph=dataset.graph, graph_type=dataset.graph_type,
+        prompt=dataset.prompt, args=args
+    )
+    _reload_model(model, 'output_topo/europe_graph_llm_7b_gat_seed0_checkpoint_best.pth')

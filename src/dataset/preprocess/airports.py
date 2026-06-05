@@ -2,17 +2,23 @@
 Shared preprocessing for Brazil / Europe / USA airport datasets.
 
 Reads:
-    dataset/airports/{name}/topo.npy         (5 topo features, cached by generate_descriptions.py)
-    dataset/airports/{name}/descriptions.csv (LLM descriptions, cached by generate_descriptions.py)
+    dataset/airports/{name}/topo.npy         (5 topo features)
+    dataset/airports/{name}/descriptions.csv (LLM descriptions)
 
-Writes:
-    dataset/tape_{name}/processed/data.pt
+Writes (--features topo, default):
+    dataset/tape_{name}/processed/data.pt     x = [N, 5] topo matrix
     dataset/tape_{name}/processed/text.csv
-    dataset/tape_{name}/split/{train,val,test}_indices.txt
+    dataset/tape_{name}/split/
 
-Run for a single dataset:
+Writes (--features minilm):
+    dataset/airports/{name}/minilm_x.pt       cached MiniLM embeddings [N, 384]
+    dataset/tape_{name}_minilm/processed/data.pt  x = [N, 384]
+    dataset/tape_{name}_minilm/processed/text.csv
+    dataset/tape_{name}_minilm/split/         reuses same split as topo variant
+
+Run:
     python -m src.dataset.preprocess.airports --dataset brazil
-    python -m src.dataset.preprocess.airports --dataset europe
+    python -m src.dataset.preprocess.airports --dataset europe --features minilm
 """
 
 import argparse
@@ -81,45 +87,98 @@ def build_feature_matrix(topo: dict, num_nodes: int) -> np.ndarray:
     )
 
 
-def preprocess(name: str):
+# ── MiniLM encoding ─────────────────────────────────────────────────────────
+
+MINILM_MODEL   = "all-MiniLM-L12-v2"   # same model as encode/encode_text.py
+# Same template as encode_text.py line 99; for airports default_text is None → 'na'
+_DESC_TEMPLATE = (
+    "The node type is airport. "
+    "The node description is na. "
+    "The additional node description is {}."
+)
+
+
+def _minilm_cache_path(name: str) -> str:
+    return f"{AIRPORT_ROOT}/{name}/minilm_x.pt"
+
+
+def encode_and_save_minilm(descriptions: list, name: str) -> torch.Tensor:
+    """Encode descriptions with MiniLM-L12-v2 and cache to disk."""
+    from sentence_transformers import SentenceTransformer
+    import tqdm
+
+    print(f"  Encoding {len(descriptions)} descriptions with {MINILM_MODEL} ...")
+    model = SentenceTransformer(MINILM_MODEL)
+
+    embeddings = []
+    for desc in tqdm.tqdm(descriptions, desc="  MiniLM"):
+        text = _DESC_TEMPLATE.format(desc)
+        embeddings.append(model.encode(text))           # same as encode_text_sbert()
+
+    x = torch.tensor(embeddings, dtype=torch.float32)  # [N, 384]
+    cache = _minilm_cache_path(name)
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    torch.save(x, cache)
+    print(f"  Saved MiniLM embeddings -> {cache}  (shape: {x.shape})")
+    return x
+
+
+def load_minilm_embeddings(descriptions: list, name: str) -> torch.Tensor:
+    """Load MiniLM embeddings from cache, encode and save if missing."""
+    cache = _minilm_cache_path(name)
+    if os.path.exists(cache):
+        print(f"  Loading MiniLM embeddings from {cache}")
+        x = torch.load(cache, weights_only=True)
+        print(f"  Shape: {x.shape}")
+        return x
+    return encode_and_save_minilm(descriptions, name)
+
+
+# ── Main preprocess entry point ──────────────────────────────────────────────
+
+def preprocess(name: str, features: str = "topo"):
+    assert features in ("topo", "minilm"), f"Unknown features: {features}"
     meta      = DATASET_META[name]
     num_nodes = meta["num_nodes"]
     pyg_name  = meta["pyg_name"]
+    tag       = name if features == "topo" else f"{name}_minilm"
 
-    print(f"\nPreprocessing {name} airport dataset ...")
+    print(f"\nPreprocessing {tag} airport dataset (features={features}) ...")
 
     # ── Graph ───────────────────────────────────────────────────────────────
     dataset = Airports(root=AIRPORT_ROOT, name=pyg_name)
     data    = dataset[0]
 
-    # ── Topo features → graph.x ─────────────────────────────────────────────
-    topo   = load_topo(name, data)
-    x      = build_feature_matrix(topo, num_nodes)
-    data.x = torch.tensor(x, dtype=torch.float)   # [N, 5]
-
-    # Make edge_index undirected: 93 % of airport edges are one-way in the raw data,
-    # which would starve many nodes of incoming messages and is inconsistent with the
-    # topo features (which were computed on the undirected graph).
+    # Make edge_index undirected (93 % of raw edges are one-way)
     data.edge_index = to_undirected(data.edge_index, num_nodes=num_nodes)
 
     # ── Labels ──────────────────────────────────────────────────────────────
     labels = [CLASSES[y.item()] for y in data.y]
 
-    # ── Descriptions ────────────────────────────────────────────────────────
+    # ── Descriptions (needed for both feature types) ─────────────────────────
     desc_path = _desc_path(name)
     if not os.path.exists(desc_path):
         raise FileNotFoundError(
             f"\n{desc_path} not found.\n"
             f"Generate it first:\n"
-            f"  OPENAI_API_KEY=sk-...  python generate_descriptions.py --dataset {name}\n"
+            f"  python generate_descriptions.py --dataset {name}\n"
         )
     desc_df      = pd.read_csv(desc_path).sort_values("node_idx").reset_index(drop=True)
     if len(desc_df) != num_nodes:
         raise ValueError(f"Expected {num_nodes} descriptions, got {len(desc_df)}")
     descriptions = desc_df["description"].tolist()
 
+    # ── Feature matrix → graph.x ─────────────────────────────────────────────
+    if features == "topo":
+        topo   = load_topo(name, data)
+        x      = build_feature_matrix(topo, num_nodes)
+        data.x = torch.tensor(x, dtype=torch.float)          # [N, 5]
+    else:
+        data.x = load_minilm_embeddings(descriptions, name)  # [N, 384]
+
     # ── Save ────────────────────────────────────────────────────────────────
-    out_dir = f"dataset/tape_{name}/processed"
+    out_dir   = f"dataset/tape_{tag}/processed"
+    split_dir = f"dataset/tape_{tag}/split"
     os.makedirs(out_dir, exist_ok=True)
 
     torch.save(data, f"{out_dir}/data.pt")
@@ -133,13 +192,15 @@ def preprocess(name: str):
     df.to_csv(f"{out_dir}/text.csv", index=False)
     print(f"  Saved text   -> {out_dir}/text.csv")
 
-    generate_split(num_nodes, f"dataset/tape_{name}/split")
-    print(f"  Saved split  -> dataset/tape_{name}/split/")
+    generate_split(num_nodes, split_dir)
+    print(f"  Saved split  -> {split_dir}/")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", required=True, choices=["brazil", "europe", "usa"])
+    parser.add_argument("--dataset",  required=True, choices=["brazil", "europe", "usa"])
+    parser.add_argument("--features", default="topo", choices=["topo", "minilm"],
+                        help="topo: 5-dim topological matrix (default); minilm: 384-dim MiniLM embeddings")
     args = parser.parse_args()
-    preprocess(args.dataset)
+    preprocess(args.dataset, features=args.features)
     print("Done!")

@@ -62,6 +62,14 @@ def parse_args_llama():
     parser.add_argument("--gnn_out_dim", type=int, default=1024)
     parser.add_argument("--gnn_num_heads", type=int, default=4)
     parser.add_argument("--gnn_dropout", type=float, default=0.0)
+    # 'batchnorm' (default) or 'none' — controls BatchNorm layers inside GCN
+    parser.add_argument("--gnn_normalize", type=str, default='batchnorm',
+                        choices=['none', 'batchnorm'])
+    # TANS domain-adaptation setup: fraction of TARGET graph held out for validation.
+    # 0.0 = no target val (original behaviour); 0.2 = 20% val / 80% test (TANS paper).
+    parser.add_argument("--target_val_ratio", type=float, default=0.0)
+    # Standardise graph.x with StandardScaler before training (used for TPF features).
+    parser.add_argument("--normalize_features", action='store_true')
 
     args = parser.parse_args()
     return args

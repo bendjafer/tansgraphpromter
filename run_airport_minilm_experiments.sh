@@ -1,40 +1,41 @@
 #!/bin/bash
 # ============================================================
-# Airport cross-dataset experiments
-#   Set A: train Europe  → test Brazil  (seeds 0, 1, 2)
-#   Set B: train Brazil  → test Europe  (seeds 0, 1, 2)
+# Airport cross-dataset experiments — MiniLM features
+#   x = MiniLM-L12-v2 embeddings of node descriptions [N, 384]
+#   (compare directly against run_airport_experiments.sh which uses [N, 5] topo)
+#
+#   Set A: train europe_minilm → test brazil_minilm  (seeds 0, 1, 2)
+#   Set B: train brazil_minilm → test europe_minilm  (seeds 0, 1, 2)
 # ============================================================
 
-set -e  # stop on first error
+set -e
 
-# Set to "disabled" to skip wandb logging, "online" to log to wandb cloud
 export WANDB_MODE=disabled
 
 SEEDS=(0 1 2)
 MODEL=graph_llm
 LLM=7b
 GNN=gat
-OUTPUT_DIR=output_topo
-LOG_DIR=logs/airport
+OUTPUT_DIR=output_minilm
+LOG_DIR=logs/airport_minilmc
 mkdir -p "$OUTPUT_DIR" "$LOG_DIR"
 
 # ── Prerequisites check ──────────────────────────────────────
-echo "Checking preprocessed datasets..."
-for name in europe brazil; do
+echo "Checking preprocessed MiniLM datasets..."
+for name in europe_minilm brazil_minilm; do
     pt="dataset/tape_${name}/processed/data.pt"
     if [ ! -f "$pt" ]; then
         echo "  ERROR: $pt not found."
         echo "  Run first:"
-        echo "    python generate_descriptions.py --dataset $name"
-        echo "    python -m src.dataset.preprocess.airports --dataset $name"
+        echo "    python -m src.dataset.preprocess.airports --dataset ${name%_minilm} --features minilm"
         exit 1
     fi
 done
-echo "  OK — both datasets ready."
+echo "  OK — both MiniLM datasets ready."
 echo ""
 
-# ── Helper function ──────────────────────────────────────────
-run_experiment() { 
+# ── Helper ───────────────────────────────────────────────────
+run_experiment() {
     local train_ds=$1
     local test_ds=$2
     local seed=$3
@@ -61,28 +62,28 @@ run_experiment() {
     echo ""
 }
 
-# ── Set A: Europe → Brazil ───────────────────────────────────
+# ── Set A: europe_minilm → brazil_minilm ─────────────────────
 echo "========================================================"
-echo "  SET A — Train: Europe   Test: Brazil"
+echo "  SET A — Train: europe_minilm   Test: brazil_minilm"
 echo "========================================================"
 for seed in "${SEEDS[@]}"; do
-    run_experiment europe brazil "$seed"
+    run_experiment europe_minilm brazil_minilm "$seed"
 done
 
-# ── Set B: Brazil → Europe ───────────────────────────────────
+# ── Set B: brazil_minilm → europe_minilm ─────────────────────
 echo "========================================================"
-echo "  SET B — Train: Brazil   Test: Europe"
+echo "  SET B — Train: brazil_minilm   Test: europe_minilm"
 echo "========================================================"
 for seed in "${SEEDS[@]}"; do
-    run_experiment brazil europe "$seed"
+    run_experiment brazil_minilm europe_minilm "$seed"
 done
 
 # ── Summary ──────────────────────────────────────────────────
 echo "========================================================"
-echo "All runs complete. Results summary:"
+echo "All MiniLM runs complete. Results summary:"
 echo "========================================================"
 for f in "$LOG_DIR"/*.log; do
     tag=$(basename "$f" .log)
     acc=$(grep "Test Acc" "$f" | tail -1 | grep -oP '[0-9]+\.[0-9]+' | tail -1)
-    printf "  %-35s  Test Acc: %s\n" "$tag" "${acc:-N/A}"
+    printf "  %-45s  Test Acc: %s\n" "$tag" "${acc:-N/A}"
 done

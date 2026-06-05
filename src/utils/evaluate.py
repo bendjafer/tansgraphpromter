@@ -182,4 +182,6 @@ eval_funcs = {
     'products': get_accuracy_products,
     'brazil': get_accuracy_brazil,
     'europe': get_accuracy_europe,
+    'brazil_minilm': _get_accuracy_airport,
+    'europe_minilm': _get_accuracy_airport,
 }

@@ -5,6 +5,8 @@ from src.dataset.arxiv import ArxivDataset
 from src.dataset.products import ProductsDataset
 from src.dataset.brazil import BrazilDataset
 from src.dataset.europe import EuropeDataset
+from src.dataset.brazil_minilm import BrazilMiniLMDataset
+from src.dataset.europe_minilm import EuropeMiniLMDataset
 
 
 load_dataset = {
@@ -15,4 +17,6 @@ load_dataset = {
     'products': ProductsDataset,
     'brazil': BrazilDataset,
     'europe': EuropeDataset,
+    'brazil_minilm': BrazilMiniLMDataset,
+    'europe_minilm': EuropeMiniLMDataset,
 }

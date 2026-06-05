@@ -37,7 +37,12 @@ dataset/airports/*/processed/
 
 # ── Model checkpoints & prediction outputs (large) ───────────
 output/
-output2/
+output_2/
+output_minilm/
+output_tans/
+output_topo/
+
+
 # ── Run logs ─────────────────────────────────────────────────
 wandb/
 logs/
